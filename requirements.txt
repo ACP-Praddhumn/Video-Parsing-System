@@ -1,0 +1,5 @@
+fastapi
+pymediainfo 
+python-dotenv
+uvicorn
+python-dotenv
