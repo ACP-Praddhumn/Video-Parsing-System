@@ -3,3 +3,4 @@ pymediainfo
 python-dotenv
 uvicorn
 python-dotenv
+python-multipart
