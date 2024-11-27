@@ -1,7 +1,8 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
-from pymediainfo import MediaInfo
 import os
+import subprocess
 from dotenv import load_dotenv
+import json
 
 app = FastAPI()
 
@@ -14,7 +15,19 @@ def verify_api_key(api_key: str):
 
 def get_detailed_metadata(file_path: str):
     try:
-        media_info = MediaInfo.parse(file_path)
+        # Run ffprobe to get metadata
+        cmd = [
+            "ffprobe", 
+            "-v", "error", 
+            "-print_format", "json", 
+            "-show_format", 
+            "-show_streams", 
+            file_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        metadata = json.loads(result.stdout)
+        
+        # Extract relevant details from the ffprobe output
         detailed_metadata = {
             "File": {
                 "Filename": os.path.basename(file_path),
@@ -24,37 +37,36 @@ def get_detailed_metadata(file_path: str):
             "Audio": {},
             "Composite": {}
         }
-        
-        for track in media_info.tracks:
-            if track.track_type == "General":
-                detailed_metadata["File"].update({
-                    "File Type": track.file_extension.upper() if track.file_extension else "N/A",
-                    "MIME Type": track.internet_media_type,
-                    "Duration": f"{int(track.duration / 1000)} s" if track.duration else "N/A",
-                    "Avg Bitrate": f"{track.overall_bit_rate / 1000:.1f} kbps" if track.overall_bit_rate else "N/A",
-                    "Major Brand": track.format,
-                    "Compatible Brands": track.other_format if hasattr(track, "other_format") else [],
-                    "Create Date": track.encoded_date,
-                    "Modify Date": track.tagged_date,
-                })
-            elif track.track_type == "Video":
+
+        # Extract general metadata
+        for stream in metadata.get('streams', []):
+            if stream['codec_type'] == 'video':
                 detailed_metadata["Video"].update({
-                    "Codec": track.format,
-                    "Width": track.width,
-                    "Height": track.height,
-                    "Frame Rate": track.frame_rate,
-                    "Bit Depth": track.bit_depth,
-                    "Compressor ID": track.codec_id,
-                    "Rotation": track.rotation if hasattr(track, "rotation") else 0,
+                    "Codec": stream.get('codec_name', 'N/A'),
+                    "Width": stream.get('width', 'N/A'),
+                    "Height": stream.get('height', 'N/A'),
+                    "Frame Rate": eval(stream.get('r_frame_rate', '0')) if '/' in stream.get('r_frame_rate', '') else 'N/A',
+                    "Bit Depth": stream.get('bits_per_raw_sample', 'N/A'),
+                    "Rotation": stream.get('rotation', '0')
                 })
-            elif track.track_type == "Audio":
+            elif stream['codec_type'] == 'audio':
                 detailed_metadata["Audio"].update({
-                    "Audio Format": track.format,
-                    "Channels": track.channel_s,
-                    "Bits Per Sample": track.bit_depth,
-                    "Sample Rate": track.sampling_rate,
+                    "Audio Format": stream.get('codec_name', 'N/A'),
+                    "Channels": stream.get('channels', 'N/A'),
+                    "Sample Rate": stream.get('sample_rate', 'N/A')
                 })
         
+        # Extract file-level metadata (format details)
+        format_info = metadata.get('format', {})
+        detailed_metadata["File"].update({
+            "File Type": format_info.get('format_name', 'N/A'),
+            "MIME Type": format_info.get('mime_type', 'N/A'),
+            "Duration": format_info.get('duration', 'N/A'),
+            "Avg Bitrate": format_info.get('bit_rate', 'N/A'),
+            "Create Date": format_info.get('tags', {}).get('creation_time', 'N/A')
+        })
+        
+        # Calculate composite image size and megapixels (if video dimensions are available)
         if "Width" in detailed_metadata["Video"] and "Height" in detailed_metadata["Video"]:
             width = detailed_metadata["Video"]["Width"]
             height = detailed_metadata["Video"]["Height"]
