@@ -8,17 +8,12 @@ ENV PYTHONUNBUFFERED=1 \
 # Set the working directory in the container
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies (ffmpeg for metadata extraction)
 RUN apt-get update && apt-get install -y \
     wget \
-    libzen0v5 \
+    ffmpeg \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-# Download and install MediaInfo binary
-RUN wget https://mediaarea.net/download/binary/libmediainfo0/23.09/libmediainfo0v5_23.09-1_amd64.deb \
-    && dpkg -i libmediainfo0v5_23.09-1_amd64.deb \
-    && rm libmediainfo0v5_23.09-1_amd64.deb
 
 # Copy requirements file to the container
 COPY requirements.txt .
